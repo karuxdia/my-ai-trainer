@@ -45,19 +45,84 @@ GYM_ENV = """
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ==========================================
-# 1. スプレッドシート連携関数
+# 1. スプレッドシート連携 ＆ 一時保存関数
 # ==========================================
 def get_gspread_client():
     scopes = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
-    # JSONファイルではなく、金庫（secrets）のデータから認証情報を作成します
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"], 
         scopes=scopes
     )
     return gspread.authorize(credentials)
+
+def get_or_create_temp_sheet(client, spreadsheet_id):
+    """Tempシートを取得。なければ自動作成する"""
+    spreadsheet = client.open_by_key(spreadsheet_id)
+    try:
+        return spreadsheet.worksheet("Temp")
+    except gspread.exceptions.WorksheetNotFound:
+        # 見つからない場合は新しく作成（10行10列で十分）
+        return spreadsheet.add_worksheet(title="Temp", rows=10, cols=10)
+
+def get_progress_data():
+    """現在の入力途中経過をセッションステートからかき集める"""
+    progress = {}
+    for key in st.session_state.keys():
+        if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
+            progress[key] = st.session_state[key]
+    return progress
+
+def save_to_temp():
+    """Tempシートにメニューと途中経過を保存する"""
+    try:
+        client = get_gspread_client()
+        sheet = get_or_create_temp_sheet(client, SPREADSHEET_ID)
+        
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        menu_json = json.dumps(st.session_state.get("menu_data", []), ensure_ascii=False)
+        progress_json = json.dumps(get_progress_data(), ensure_ascii=False)
+        
+        # A1: 日付, B1: メニューデータ, C1: 途中経過データ
+        sheet.update("A1:C1", [[today_str, menu_json, progress_json]])
+        return True
+    except Exception as e:
+        st.error(f"一時保存に失敗しました: {e}")
+        return False
+
+def load_from_temp():
+    """Tempシートから今日のデータを読み込んで復元する"""
+    try:
+        client = get_gspread_client()
+        sheet = get_or_create_temp_sheet(client, SPREADSHEET_ID)
+        data = sheet.row_values(1)
+        
+        if not data or len(data) < 3:
+            return None
+            
+        saved_date, menu_json, progress_json = data[0], data[1], data[2]
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        
+        # 保存されたデータが今日のものであれば復元
+        if saved_date == today_str:
+            return {
+                "menu_data": json.loads(menu_json),
+                "progress_data": json.loads(progress_json)
+            }
+    except Exception:
+        pass
+    return None
+
+def clear_temp():
+    """完了時にTempシートのデータを消去する"""
+    try:
+        client = get_gspread_client()
+        sheet = get_or_create_temp_sheet(client, SPREADSHEET_ID)
+        sheet.clear()
+    except Exception:
+        pass
 
 # ==========================================
 # 2. プロンプト生成関数
@@ -105,7 +170,7 @@ def create_prompt(target_parts, num_exercises, total_time_minutes, past_logs):
     return prompt
 
 # ==========================================
-# ★追加: セット数増減用のコールバック関数
+# 3. セット数増減用のコールバック関数
 # ==========================================
 def add_set(idx):
     st.session_state[f"sets_count_{idx}"] += 1
@@ -115,16 +180,27 @@ def sub_set(idx):
         st.session_state[f"sets_count_{idx}"] -= 1
 
 # ==========================================
-# 3. Streamlit UI 構築
+# 4. Streamlit UI 構築
 # ==========================================
 st.set_page_config(page_title="専属AIトレーナー", page_icon="💪")
 st.title("💪 AI筋トレメニュー作成 ＆ 履歴記録アプリ")
 
-# セッションステートの初期化
-if "menu_data" not in st.session_state:
-    st.session_state["menu_data"] = []
-if "menu_generated" not in st.session_state:
+# --- アプリ起動時（リロード時）の自動復元処理 ---
+if "initialized" not in st.session_state:
+    st.session_state["initialized"] = True
     st.session_state["menu_generated"] = False
+    st.session_state["menu_data"] = []
+    
+    # Tempシートを確認して、今日のデータがあれば復元
+    temp_data = load_from_temp()
+    if temp_data:
+        st.session_state["menu_data"] = temp_data["menu_data"]
+        st.session_state["menu_generated"] = True
+        # 途中経過（重量や回数など）もセッションステートに戻す
+        for k, v in temp_data["progress_data"].items():
+            st.session_state[k] = v
+        # リロードから復活したことを画面上部にそっと表示
+        st.toast("💾 一時保存データから復元しました！", icon="✅")
 
 # --- サイドバー：条件入力 ---
 st.sidebar.header("📝 今日のトレーニング条件")
@@ -142,7 +218,7 @@ if st.sidebar.button("メニュー作成 🔥", type="primary"):
     else:
         # メニュー再生成時に古い入力データをクリアする
         for key in list(st.session_state.keys()):
-            if key.startswith("sets_count_") or key.startswith("weight_") or key.startswith("reps_") or key.startswith("interval_"):
+            if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
                 del st.session_state[key]
 
         with st.spinner("過去の履歴を分析し、新しい刺激を与えるメニューを考案中..."):
@@ -172,7 +248,10 @@ if st.sidebar.button("メニュー作成 🔥", type="primary"):
                 menu_data = json.loads(text_content)
                 st.session_state["menu_data"] = menu_data
                 st.session_state["menu_generated"] = True
-                st.success("メニューが完成しました！")
+                
+                # ★追加: メニュー生成直後に初期状態をTempシートへ保存！
+                save_to_temp()
+                st.success("メニューが完成し、一時保存されました！")
 
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
@@ -188,7 +267,7 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
         st.markdown(f"**推奨設定**: {menu['weight_guide']} | **セット数**: {menu['sets']} | **レップ数**: {menu['reps']} | **休憩**: {menu['interval_sec']}秒")
         st.info(f"💡 AIからのアドバイス: {menu['advice']}")
 
-        # セット数の初期化（デフォルト3）
+        # セット数の初期化（復元されていなければデフォルト3）
         if f"sets_count_{i}" not in st.session_state:
             st.session_state[f"sets_count_{i}"] = 3
 
@@ -203,7 +282,6 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
         for s in range(st.session_state[f"sets_count_{i}"]):
             col_w, col_r = st.columns(2)
             with col_w:
-                # 0.0kgからスタート、2.5kg刻みで入力可能
                 st.number_input(f"セット{s+1} 重量 (kg)", min_value=0.0, step=2.5, format="%.1f", key=f"weight_{i}_{s}")
             with col_r:
                 st.number_input(f"セット{s+1} 回数", min_value=0, step=1, key=f"reps_{i}_{s}")
@@ -219,6 +297,14 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
 
         st.divider()
 
+    # --- ★追加: 途中経過の一時保存ボタン ---
+    st.markdown("### 💾 データのバックアップ")
+    if st.button("途中経過を一時保存する", help="インターバル中などに押しておくと、画面が消えてもここから再開できます"):
+        with st.spinner("保存中..."):
+            if save_to_temp():
+                st.success("途中経過をTempシートにバックアップしました！リロードしても安心です。")
+    st.divider()
+
     # 全種目の記録が終わったあとの保存ボタン
     if st.button("全トレーニング完了・スプレッドシートへ記録保存 ✅", type="primary"):
         st.balloons()
@@ -228,16 +314,13 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             idx = log["index"]
             sets_results = []
 
-            # 各セットの入力を「〇〇kg×〇〇回」の文字列に結合
             for s in range(st.session_state[f"sets_count_{idx}"]):
                 w = st.session_state[f"weight_{idx}_{s}"]
                 r = st.session_state[f"reps_{idx}_{s}"]
                 if w > 0 or r > 0:
-                    # 重量が整数の場合は小数点を消してスッキリ見せる
                     w_str = f"{int(w)}" if w.is_integer() else f"{w}"
                     sets_results.append(f"{w_str}kg×{r}回")
 
-            # "100kg×10回 / 100kg×8回" のようにスラッシュで区切る
             achieved_result_str = " / ".join(sets_results) if sets_results else "記録なし"
             achieved_interval = st.session_state[f"interval_{idx}"]
 
@@ -266,6 +349,17 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             # シートの末尾にまとめて追記
             sheet.append_rows(rows_to_append)
             st.success("📊 スプレッドシートに本日の記録を保存しました！次回はこの記録をもとにメニューが作成されます。")
+
+            # ★追加: 本番保存が終わったらTempシートをクリアし、セッションをリセット
+            clear_temp()
+            st.session_state["menu_generated"] = False
+            st.session_state["menu_data"] = []
+            for key in list(st.session_state.keys()):
+                if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
+                    del st.session_state[key]
+            
+            # 再読み込みして初期画面に戻す
+            st.rerun()
 
         except Exception as e:
             st.error(f"スプレッドシートの保存に失敗しました: {e}")
