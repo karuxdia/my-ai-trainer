@@ -271,20 +271,39 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
         if f"sets_count_{i}" not in st.session_state:
             st.session_state[f"sets_count_{i}"] = 3
 
-        # 追加・削除ボタンを横に並べる
-        col_add, col_sub, _ = st.columns([1, 1, 2])
-        with col_add:
-            st.button("➕ セット追加", key=f"btn_add_{i}", on_click=add_set, args=(i,))
-        with col_sub:
-            st.button("➖ セット削除", key=f"btn_sub_{i}", on_click=sub_set, args=(i,))
+        import pandas as pd
 
-        # 入力欄の生成
+        # 現在のセット数分のデータを集めて表の元データを作成
+        df_data = []
         for s in range(st.session_state[f"sets_count_{i}"]):
-            col_w, col_r = st.columns(2)
-            with col_w:
-                st.number_input(f"セット{s+1} 重量 (kg)", min_value=0.0, step=2.5, format="%.1f", key=f"weight_{i}_{s}")
-            with col_r:
-                st.number_input(f"セット{s+1} 回数", min_value=0, step=1, key=f"reps_{i}_{s}")
+            w = st.session_state.get(f"weight_{i}_{s}", None)
+            r = st.session_state.get(f"reps_{i}_{s}", None)
+            df_data.append({"重量 (kg)": w, "回数": r})
+            
+        df = pd.DataFrame(df_data)
+        # 表の左端の行番号を 1 から始める（これがセット番号になります）
+        df.index = range(1, len(df) + 1)
+
+        # データエディタ（コンパクトな表）を表示
+        edited_df = st.data_editor(
+            df,
+            key=f"editor_{i}",
+            num_rows="dynamic", # 表の中で直接行を追加・削除可能にする
+            use_container_width=True,
+            column_config={
+                "重量 (kg)": st.column_config.NumberColumn("重量 (kg)", min_value=0.0, step=2.5, format="%.1f"),
+                "回数": st.column_config.NumberColumn("回数", min_value=0, step=1)
+            }
+        )
+
+        # 編集された表のデータを、裏側のシステム（保存用）に連携する
+        st.session_state[f"sets_count_{i}"] = len(edited_df)
+        for s, (idx, row) in enumerate(edited_df.iterrows()):
+            w = row["重量 (kg)"]
+            r = row["回数"]
+            # 未入力(NaN)の場合は None として扱う（前回のエラー対策を引き継ぐ）
+            st.session_state[f"weight_{i}_{s}"] = None if pd.isna(w) else float(w)
+            st.session_state[f"reps_{i}_{s}"] = None if pd.isna(r) else int(r)
 
         # 全体のインターバル入力
         st.text_input("実際のインターバル (秒)", key=f"interval_{i}")
@@ -317,10 +336,15 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             for s in range(st.session_state[f"sets_count_{idx}"]):
                 w = st.session_state[f"weight_{idx}_{s}"]
                 r = st.session_state[f"reps_{idx}_{s}"]
-                if w > 0 or r > 0:
-                    w_str = f"{int(w)}" if w.is_integer() else f"{w}"
-                    sets_results.append(f"{w_str}kg×{r}回")
+                
+                # ★追加：未入力(None)のままだとエラーになるので、その場合は 0 として扱う
+                w_val = w if w is not None else 0
+                r_val = r if r is not None else 0
 
+                # w と r を w_val と r_val に変更
+                if w_val > 0 or r_val > 0:
+                    w_str = f"{int(w_val)}" if w_val.is_integer() else f"{w_val}"
+                    sets_results.append(f"{w_str}kg×{r_val}回")
             achieved_result_str = " / ".join(sets_results) if sets_results else "記録なし"
             achieved_interval = st.session_state[f"interval_{idx}"]
 
