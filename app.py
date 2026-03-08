@@ -314,15 +314,14 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             "index": i
         })
 
-        st.divider()
+        st.markdown("") # ボタンの上の余白
+        if st.button("💾 この種目までの経過を一時保存", key=f"save_btn_{i}"):
+            with st.spinner("保存中..."):
+                if save_to_temp():
+                    # 画面上部にサッと通知を出して消えるようにする（画面がズレない）
+                    st.toast(f"✅ 【{menu['name']}】までの経過を保存しました！", icon="💾")
 
-    # --- ★追加: 途中経過の一時保存ボタン ---
-    st.markdown("### 💾 データのバックアップ")
-    if st.button("途中経過を一時保存する", help="インターバル中などに押しておくと、画面が消えてもここから再開できます"):
-        with st.spinner("保存中..."):
-            if save_to_temp():
-                st.success("途中経過をTempシートにバックアップしました！リロードしても安心です。")
-    st.divider()
+        st.divider()
 
     # 全種目の記録が終わったあとの保存ボタン
     if st.button("全トレーニング完了・スプレッドシートへ記録保存 ✅", type="primary"):
