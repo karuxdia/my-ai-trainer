@@ -185,6 +185,24 @@ def sub_set(idx):
 st.set_page_config(page_title="専属AIトレーナー", page_icon="💪")
 st.title("💪 AI筋トレメニュー作成 ＆ 履歴記録アプリ")
 
+st.markdown("""
+<style>
+    /* カラム（st.columns）がスマホで縦に折り返されるのを防ぐ */
+    [data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+    }
+    /* 各カラムが均等に縮むようにする */
+    [data-testid="column"] {
+        width: auto !important;
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        padding: 0 4px !important; /* スマホ用に少し隙間を詰める */
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- アプリ起動時（リロード時）の自動復元処理 ---
 if "initialized" not in st.session_state:
     st.session_state["initialized"] = True
