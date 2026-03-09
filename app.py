@@ -297,14 +297,6 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
                     key=f"reps_{i}_{s}"
                 )
 
-            with col_r:
-                # 同様にラベルを隠す
-                st.number_input(
-                    f"セット{s+1} 回数", 
-                    min_value=0, step=1, value=None, 
-                    key=f"reps_{i}_{s}",
-                    label_visibility="collapsed"
-                )
         # 全体のインターバル入力
         st.text_input("実際のインターバル (秒)", key=f"interval_{i}")
 
@@ -386,3 +378,4 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
 
         except Exception as e:
             st.error(f"スプレッドシートの保存に失敗しました: {e}")
+
