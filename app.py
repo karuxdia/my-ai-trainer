@@ -183,25 +183,7 @@ def sub_set(idx):
 # 4. Streamlit UI 構築
 # ==========================================
 st.set_page_config(page_title="専属AIトレーナー", page_icon="💪")
-st.title("💪 AI筋トレメニュー作成 ＆ 履歴記録アプリ")
-
-st.markdown("""
-<style>
-    /* カラム（st.columns）がスマホで縦に折り返されるのを防ぐ */
-    [data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: center !important;
-    }
-    /* 各カラムが均等に縮むようにする */
-    [data-testid="column"] {
-        width: auto !important;
-        flex: 1 1 0% !important;
-        min-width: 0 !important;
-        padding: 0 4px !important; /* スマホ用に少し隙間を詰める */
-    }
-</style>
-""", unsafe_allow_html=True)
+st.title(" AI筋トレ履歴記録アプリ")
 
 # --- アプリ起動時（リロード時）の自動復元処理 ---
 if "initialized" not in st.session_state:
@@ -296,29 +278,25 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
         with col_sub:
             st.button("➖ セット削除", key=f"btn_sub_{i}", on_click=sub_set, args=(i,))
 
-        # 1. 見出し行を最初に1回だけ表示する
-        col_set, col_w, col_r = st.columns([1, 2, 2])
-        with col_set:
-            st.markdown("**セット**")
-        with col_w:
-            st.markdown("**重量 (kg)**")
-        with col_r:
-            st.markdown("**回数**")
-
-        # 2. 入力欄の生成（ラベルを隠して高さを詰める）
         for s in range(st.session_state[f"sets_count_{i}"]):
-            col_set, col_w, col_r = st.columns([1, 2, 2])
-            with col_set:
-                # セット番号を縦の少し中央寄りに配置
-                st.markdown(f"<div style='margin-top: 8px; text-align: center;'>{s+1}</div>", unsafe_allow_html=True)
+            # セット番号を明確に見出しとして表示
+            st.markdown(f"**■ セット {s+1}**")
+            
+            # 重量と回数だけを2カラムで並べる
+            col_w, col_r = st.columns(2)
             with col_w:
-                # label_visibility="collapsed" で「セット1 重量」という文字を消し、余白を削る
                 st.number_input(
-                    f"セット{s+1} 重量", 
+                    "重量 (kg)", 
                     min_value=0.0, step=2.5, format="%.1f", value=None, 
-                    key=f"weight_{i}_{s}",
-                    label_visibility="collapsed"
+                    key=f"weight_{i}_{s}"
                 )
+            with col_r:
+                st.number_input(
+                    "回数", 
+                    min_value=0, step=1, value=None, 
+                    key=f"reps_{i}_{s}"
+                )
+
             with col_r:
                 # 同様にラベルを隠す
                 st.number_input(
