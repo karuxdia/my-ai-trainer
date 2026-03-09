@@ -208,8 +208,8 @@ target_parts = st.sidebar.multiselect(
     "ターゲット部位",
     ["胸", "背中", "脚", "肩前部", "肩中部", "肩後部", "腕", "腹筋"],
 )
-num_exercises = st.sidebar.slider("種目数", 1, 10, 4)
-total_time = st.sidebar.slider("許容時間 (分)", 15, 120, 60)
+num_exercises = st.sidebar.slider("種目数", 1, 10, 5)
+total_time = st.sidebar.slider("許容時間 (分)", 15, 120, 80)
 
 # --- メニュー生成ボタン ---
 if st.sidebar.button("メニュー作成 🔥", type="primary"):
@@ -378,4 +378,5 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
 
         except Exception as e:
             st.error(f"スプレッドシートの保存に失敗しました: {e}")
+
 
