@@ -71,7 +71,7 @@ def get_progress_data():
     """現在の入力途中経過をセッションステートからかき集める"""
     progress = {}
     for key in st.session_state.keys():
-        if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
+        if key.startswith(("sets_count_", "weight_", "reps_", "interval_", "memo_")):
             progress[key] = st.session_state[key]
     return progress
 
@@ -149,9 +149,9 @@ def create_prompt(target_parts, num_exercises, total_time_minutes, past_logs):
     {past_logs}
 
     ### メニュー作成のルール（最重要）
-    1. **刺激の変化とマンネリ打破**: クライアントは毎回重量や回数を増やすだけの過負荷には耐えられません。過去の記録を参照し、前回と同じ部位でも「別の種目に変更する」「重量設定を少し下げてレップ数を増やす」「ネガティブ動作を意識させる」など、異なる角度から新鮮な刺激を与えるメニューを提案してください。
-    2. **強度設定**: ウォームアップではなく、本番セットの提案をしてください。ただし、関節への負担を考慮し、必ずしもMAX重量を狙う必要はありません。
-    3. **時間管理**: 指定された「{total_time_minutes}分」で全種目が完了するよう、セット数と推奨インターバルを調整してください。
+    1. 刺激の変化とマンネリ打破: 過去の記録を参照し、前回と同じ部位でも「別の種目に変更する」「あえて高重量・低レップ（5-8回）で神経系を刺激する」「重量設定を少し下げてレップ数を増やす」「ネガティブ動作を意識させる」など、毎回偏らないように様々な角度から新鮮な刺激を与えるメニューを提案してください。
+    2. 強度設定: ウォームアップではなく、本番セットの提案をしてください。ただし、関節への負担を考慮し、必ずしも毎回MAX重量を狙う必要はありません。
+    3. 時間管理: 指定された「{total_time_minutes}分」で全種目が完了するよう、セット数と推奨インターバルを調整してください。
 
     ### 出力形式（必ず以下のJSONフォーマットのみを出力すること。Markdownの装飾は許容しますが、中身はJSON配列にしてください。）
     ```json
@@ -160,7 +160,7 @@ def create_prompt(target_parts, num_exercises, total_time_minutes, past_logs):
         "name": "種目名（使用器具も明記）",
         "weight_guide": "推奨設定（例: 100kg / または 限界重量の70%でゆっくりなど）",
         "sets": 推奨セット数,
-        "reps": "推奨レップ数（例: 10-12）",
+        "reps": "推奨レップ数（例: 10-12 / 神経系狙いなら 5-8）",
         "interval_sec": 推奨インターバル秒数（数値のみ, 例: 120）,
         "advice": "なぜこの種目・設定を選んだかのワンポイントアドバイス"
       }}
@@ -217,8 +217,9 @@ if st.sidebar.button("メニュー作成 🔥", type="primary"):
         st.error("部位を少なくとも1つ選択してください。")
     else:
         # メニュー再生成時に古い入力データをクリアする
+        # メニュー再生成時や完了時に古い入力データをクリアする部分
         for key in list(st.session_state.keys()):
-            if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
+            if key.startswith(("sets_count_", "weight_", "reps_", "interval_", "memo_")):
                 del st.session_state[key]
 
         with st.spinner("過去の履歴を分析し、新しい刺激を与えるメニューを考案中..."):
@@ -229,9 +230,9 @@ if st.sidebar.button("メニュー作成 🔥", type="primary"):
 
                 past_logs_str = "過去の記録なし"
                 if records:
-                    recent_records = records[-10:] # 直近10件を抽出
+                    recent_records = records[-70:]
                     past_logs_str = "\n".join([
-                        f"- 日付: {r.get('日付', '')} | 種目: {r.get('種目', '')} | 実績: {r.get('実績', '')} | インターバル: {r.get('インターバル', '')}" 
+                        f"- 日付: {r.get('日付', '')} | 種目: {r.get('種目', '')} | 実績: {r.get('実績', '')} | インターバル: {r.get('インターバル', '')} | メモ: {r.get('メモ', 'なし')}" 
                         for r in recent_records
                     ])
 
@@ -300,6 +301,8 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
         # 全体のインターバル入力
         st.text_input("実際のインターバル (秒)", key=f"interval_{i}")
 
+        st.text_input("一言メモ（任意）", key=f"memo_{i}", placeholder="例: ネガティブ意識でキツかったなど")
+
         # 保存用に種目名とインデックスを保持
         logs.append({
             "種目": menu["name"],
@@ -338,11 +341,14 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
                     sets_results.append(f"{w_str}kg×{r_val}回")
             achieved_result_str = " / ".join(sets_results) if sets_results else "記録なし"
             achieved_interval = st.session_state[f"interval_{idx}"]
+            
+            memo_text = st.session_state.get(f"memo_{idx}", "")
 
             final_logs.append({
                 "種目": log["種目"],
                 "実績": achieved_result_str,
-                "インターバル": achieved_interval
+                "インターバル": achieved_interval,
+                "メモ": memo_text
             })
 
         # スプレッドシートへ記録を書き込む処理
@@ -358,9 +364,9 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
                     today, 
                     log["種目"], 
                     log["実績"], 
-                    log["インターバル"]
+                    log["インターバル"],
+                    log["メモ"]
                 ])
-
             # シートの末尾にまとめて追記
             sheet.append_rows(rows_to_append)
             st.success("📊 スプレッドシートに本日の記録を保存しました！次回はこの記録をもとにメニューが作成されます。")
@@ -369,14 +375,13 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             clear_temp()
             st.session_state["menu_generated"] = False
             st.session_state["menu_data"] = []
-            for key in list(st.session_state.keys()):
-                if key.startswith(("sets_count_", "weight_", "reps_", "interval_")):
-                    del st.session_state[key]
+        # メニュー再生成時や完了時に古い入力データをクリアする部分
+        for key in list(st.session_state.keys()):
+            if key.startswith(("sets_count_", "weight_", "reps_", "interval_", "memo_")):
+                del st.session_state[key]
             
             # 再読み込みして初期画面に戻す
             st.rerun()
 
         except Exception as e:
             st.error(f"スプレッドシートの保存に失敗しました: {e}")
-
-
