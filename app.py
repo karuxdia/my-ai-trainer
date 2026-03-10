@@ -376,9 +376,9 @@ if st.session_state["menu_generated"] and st.session_state["menu_data"]:
             st.session_state["menu_generated"] = False
             st.session_state["menu_data"] = []
         # メニュー再生成時や完了時に古い入力データをクリアする部分
-        for key in list(st.session_state.keys()):
-            if key.startswith(("sets_count_", "weight_", "reps_", "interval_", "memo_")):
-                del st.session_state[key]
+            for key in list(st.session_state.keys()):
+                if key.startswith(("sets_count_", "weight_", "reps_", "interval_", "memo_")):
+                    del st.session_state[key]
             
             # 再読み込みして初期画面に戻す
             st.rerun()
