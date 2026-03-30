@@ -236,7 +236,7 @@ if st.sidebar.button("メニュー作成 🔥", type="primary"):
                         for r in recent_records
                     ])
 
-                model = genai.GenerativeModel('gemini3-flash')
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 prompt = create_prompt(target_parts, num_exercises, total_time, past_logs_str)
                 response = model.generate_content(prompt)
 
